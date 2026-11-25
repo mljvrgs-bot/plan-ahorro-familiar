@@ -1,47 +1,90 @@
 package com.caos.planahorrofamiliar
 
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
-import com.caos.planahorrofamiliar.ui.theme.PlanAhorroFamiliarTheme
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import com.caos.planahorrofamiliar.data.repository.AhorroRepository
+import com.caos.planahorrofamiliar.ui.screens.CrearPlanScreen
+import com.caos.planahorrofamiliar.ui.screens.DetallePlanScreen
+import com.caos.planahorrofamiliar.ui.screens.PlanesScreen
+import com.caos.planahorrofamiliar.ui.screens.RegistrarPagoScreen
+import com.caos.planahorrofamiliar.ui.viewmodel.AhorroViewModel
+import com.caos.planahorrofamiliar.data.remote.RetrofitClient
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+
+        val repository = AhorroRepository(RetrofitClient.apiService)
+
         setContent {
-            PlanAhorroFamiliarTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = "Android",
-                        modifier = Modifier.padding(innerPadding)
+            val navController = rememberNavController()
+            val viewModel: AhorroViewModel = viewModel(
+                factory = AhorroViewModel.Factory(repository)
+            )
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            val context = LocalContext.current
+
+            LaunchedEffect(uiState.errorMessage) {
+                uiState.errorMessage?.let { msg ->
+                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                    viewModel.limpiarError()
+                }
+            }
+
+            NavHost(navController = navController, startDestination = "planes") {
+                composable("planes") {
+                    PlanesScreen(
+                        uiState = uiState,
+                        onCrearPlanClick = { navController.navigate("crear_plan") },
+                        onPlanClick = { planId ->
+                            viewModel.cargarDetallePlan(planId)
+                            navController.navigate("detalle_plan/$planId")
+                        }
+                    )
+                }
+                composable("crear_plan") {
+                    CrearPlanScreen(
+                        isLoading = uiState.isLoading,
+                        onBack = { navController.popBackStack() },
+                        onGuardarPlan = { motivo, meta, meses, miembros ->
+                            viewModel.crearPlan(motivo, meta, meses, miembros) {
+                                navController.popBackStack()
+                            }
+                        }
+                    )
+                }
+                composable("detalle_plan/{planId}") { backStackEntry ->
+                    val planId = backStackEntry.arguments?.getString("planId") ?: ""
+                    DetallePlanScreen(
+                        uiState = uiState,
+                        onBack = { navController.popBackStack() },
+                        onRegistrarPagoClick = { navController.navigate("registrar_pago/$planId") }
+                    )
+                }
+                composable("registrar_pago/{planId}") { backStackEntry ->
+                    val planId = backStackEntry.arguments?.getString("planId") ?: ""
+                    RegistrarPagoScreen(
+                        miembros = uiState.miembrosDelPlan,
+                        isLoading = uiState.isLoading,
+                        onBack = { navController.popBackStack() },
+                        onRegistrar = { memberId, monto ->
+                            viewModel.registrarPago(planId, memberId, monto) {
+                                navController.popBackStack()
+                            }
+                        }
                     )
                 }
             }
         }
-    }
-}
-
-@Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
-}
-
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    PlanAhorroFamiliarTheme {
-        Greeting("Android")
     }
 }
